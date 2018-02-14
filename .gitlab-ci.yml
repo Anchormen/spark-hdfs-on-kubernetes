@@ -1,0 +1,122 @@
+# list of all stages
+stages:
+    - build
+    - deploy
+# Build the Docker images
+image_build:
+    stage: build
+    image: docker:latest
+    script:
+        - export VERSION=$(echo $CI_COMMIT_REF_NAME | sed 's,.*/,,g')
+        - |
+          if [ "$VERSION" == "master" ] ; then 
+            export VERSION=latest 
+          fi
+        - docker info
+        - docker login -u ${DOCKER_REGISTRY_USER} -p ${DOCKER_REGISTRY_PASSWORD}
+        # From docker:dind, install latest version of kubectl and envsubst, jq and curl
+        - cd 'kubernetes-deploy'
+        - docker build -t ${DOCKER_REGISTRY_USER}/kubernetes-deploy:latest .
+        - docker push ${DOCKER_REGISTRY_USER}/kubernetes-deploy:latest
+        # From ubuntu 16.04, install hadoop
+        - cd ../'docker-hadoop'
+        - docker build -t ${DOCKER_REGISTRY_USER}/docker-hadoop:2.7.2 .
+        - docker push ${DOCKER_REGISTRY_USER}/docker-hadoop:2.7.2
+        # From docker-hadoop:2.7.2, create image for the namenode
+        - cd ../'docker-hadoop-namenode'
+        - docker build -t ${DOCKER_REGISTRY_USER}/docker-hadoop-namenode:${VERSION} .
+        - docker push ${DOCKER_REGISTRY_USER}/docker-hadoop-namenode:${VERSION}
+        # From docker-hadoop:2.7.2, create image for the datanodes
+        - cd ../'docker-hadoop-datanode'
+        - docker build -t ${DOCKER_REGISTRY_USER}/docker-hadoop-datanode:${VERSION} .
+        - docker push ${DOCKER_REGISTRY_USER}/docker-hadoop-datanode:${VERSION}
+        # From ubuntu 16.04, install Python, R and Spark, for workers
+        - cd ../'docker-python-r-spark'
+        - docker build -t ${DOCKER_REGISTRY_USER}/kubernetes-spark-libraries:${VERSION} .
+        - docker push ${DOCKER_REGISTRY_USER}/kubernetes-spark-libraries:${VERSION}
+        # From kubernetes-spark-libraries, install Rstudio for master
+        # Set version
+        - cd ../'docker-rstudio-zeppelin'
+        - sed -i "s/:latest/:${VERSION}/g" Dockerfile
+        - sed -i "s/default.svc.cluster.local/${CI_PROJECT_NAME}.svc.cluster.local/g" Dockerfile 
+        - docker build -t ${DOCKER_REGISTRY_USER}/kubernetes-spark-libraries-rstudio:${VERSION} .
+        - docker push ${DOCKER_REGISTRY_USER}/kubernetes-spark-libraries-rstudio:${VERSION}
+        # Proxy controller for the Spark UI
+        - cd ../'docker-spark-ui'
+        - docker build -t ${DOCKER_REGISTRY_USER}/docker-spark-ui:${VERSION} .
+        - docker push ${DOCKER_REGISTRY_USER}/docker-spark-ui:${VERSION}
+# Deploy in Kubernetes
+deploy:
+    variables:
+      # Set Kubernetes and Spark variables for resource management (memory and cpu)
+      SPARK_MASTER_REQUESTS_CPU: 1
+      SPARK_MASTER_REQUESTS_MEMORY: '8G'
+      SPARK_MASTER_LIMITS_CPU: 1
+      SPARK_MASTER_LIMITS_MEMORY: '10G' 
+      SPARK_WORKER_REQUESTS_CPU: 1
+      SPARK_WORKER_REQUESTS_MEMORY: '2G'
+      SPARK_WORKER_LIMITS_CPU: 1
+      SPARK_WORKER_LIMITS_MEMORY: '3G'
+      #SPARK_CORES_MAX: 2
+      SPARK_EXECUTOR_CORES: 1
+      SPARK_EXECUTOR_MEMORY: '2G'
+      SPARK_DRIVER_CORES: 1
+      SPARK_DRIVER_MEMORY: '3G'
+      SPARK_DRIVER_MAXRESULTSIZE: '1G'
+    image: angelsevillacamins/kubernetes-deploy:latest
+    stage: deploy
+    script:
+        - export VERSION=$(echo $CI_COMMIT_REF_NAME | sed 's,.*/,,g')
+        - |
+          if [ "$VERSION" == "master" ] ; then 
+            export VERSION=latest 
+          fi
+        - echo "${KUBE_CA_PEM}" > kube_ca.pem
+        - kubectl config set-cluster default-cluster --server=https://<IP-nuc01>:6443 --certificate-authority="$(pwd)/kube_ca.pem"
+        - kubectl config set-credentials default-admin --token=${KUBE_TOKEN}
+        - kubectl config set-context default-system --cluster=default-cluster --user=default-admin --namespace=${CI_PROJECT_NAME}
+        - kubectl config use-context default-system
+        - kubectl cluster-info || true
+        - kubectl delete cm,deploy,svc,statefulsets,rc,ds --all || true
+        # Secrets
+        - kubectl delete secret rstudio-password rstudio-user zeppelin-password zeppelin-user || true
+        - kubectl create secret generic rstudio-password --from-literal=password=${RSTUDIO_PASSWORD} || true
+        - kubectl create secret generic rstudio-user --from-literal=user=${RSTUDIO_USER} || true
+        - kubectl create secret generic zeppelin-password --from-literal=password=${ZEPPELIN_PASSWORD} || true
+        - kubectl create secret generic zeppelin-user --from-literal=user=${ZEPPELIN_USER} || true
+        # Replace Kubernetes and Spark variables for resource management (memory and cpu)
+        - envsubst < "spark-rstudio.yaml.template" > "spark-rstudio.yaml"
+        # Set version and imagePullPolicy
+        - sed -i "s/:latest/:${VERSION}/g" spark-rstudio.yaml hadoop-namenode.yaml hadoop-datanode.yaml
+        - |
+          if [ "$VERSION" != "latest" ] && [ "$VERSION" != "develop" ]; then 
+            sed -i 's/imagePullPolicy: "Always"/imagePullPolicy: "IfNotPresent"/g' spark-rstudio.yaml hadoop-namenode.yaml hadoop-datanode.yaml
+          fi
+        # Hadoop HDFS RUN ONLY ONCE
+        #- kubectl label nodes nuc01 hdfs-namenode-selector=hdfs-namenode-0 || true
+        #- kubectl label node nuc01 hdfs-datanode-exclude=yes || true
+        # Persistent volume RUN ONLY ONCE
+        #- kubectl create -f persist-pv.yaml
+        - kubectl create -f hadoop-namenode.yaml
+        - sed -i "s/default.svc.cluster.local/${CI_PROJECT_NAME}.svc.cluster.local/g" hadoop-datanode.yaml 
+        - kubectl create -f hadoop-datanode.yaml
+        # Spark StatefulSets
+        - kubectl create -f spark-rstudio.yaml
+        # Wait until spark-master-0 is running
+        - while [[ $(kubectl get pod spark-master-0 -o go-template --template "{{.status.phase}}") != "Running" ]]; do sleep 10; echo "Waiting for spark-master-0"; done;
+        - kubectl port-forward spark-master-0 8181:8181 &
+        # Update Zeppelin Interpreters with Spark variables and others
+        - cd 'docker-rstudio-zeppelin'
+        - while [ "$ZEPPELIN_STATUS" != "SUCCESS" ]; do ZEPPELIN_STATUS=`curl http://127.0.0.1:8181 -k -s -f -o /dev/null && echo "SUCCESS" || echo "ERROR"`; sleep 10; echo "Waiting for Zeppelin"; done;
+        - curl -s --data "userName=${ZEPPELIN_USER}&password=${ZEPPELIN_PASSWORD}" -c cookies.txt -X POST http://127.0.0.1:8181/api/login
+        - SPARK_INTERPRETER_ID=`curl -b cookies.txt http://127.0.0.1:8181/api/interpreter/setting | jq -r '.body[] | select(.name == "spark") |.id'`
+        # Configure Zeppelin Spark Interpreter
+        - envsubst < "spark_interpreter.json.template" > "spark_interpreter.json"
+        - curl -X PUT -d "@spark_interpreter.json"  -b cookies.txt  http://127.0.0.1:8181/api/interpreter/setting/${SPARK_INTERPRETER_ID}
+        # Configure Zeppelin File Interpreter
+        - FILE_INTERPRETER_ID=`curl -b cookies.txt  http://127.0.0.1:8181/api/interpreter/setting | jq -r '.body[] | select(.name == "file") |.id'`
+        - sed -i "s/default.svc.cluster.local/${CI_PROJECT_NAME}.svc.cluster.local/g" file_interpreter.json
+        - curl -X PUT -d "@file_interpreter.json"  -b cookies.txt  http://127.0.0.1:8181/api/interpreter/setting/${FILE_INTERPRETER_ID}
+        # Configure Zeppelin Python Interpreter
+        - PYTHON_INTERPRETER_ID=`curl -b cookies.txt http://127.0.0.1:8181/api/interpreter/setting | jq -r '.body[] | select(.name == "python") |.id'`
+        - curl -X PUT -d "@python_interpreter.json"  -b cookies.txt  http://127.0.0.1:8181/api/interpreter/setting/${PYTHON_INTERPRETER_ID}

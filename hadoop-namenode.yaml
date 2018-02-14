@@ -1,0 +1,67 @@
+# A headless service to create DNS records.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hdfs-namenode
+  labels:
+    app: hdfs-namenode
+spec:
+  ports:
+  - port: 8020
+    name: fs
+  clusterIP: None
+  selector:
+    app: hdfs-namenode
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hdfs-namenode
+spec:
+  serviceName: "hdfs-namenode"
+  # Create a size-1 set. The namenode DNS name will be
+  # hdfs-namenode-0.hdfs-namenode.YOUR-NAMESPACE.svc.YOUR-CLUSTER-DOMAIN
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hdfs-namenode
+  template:
+    metadata:
+      labels:
+        app: hdfs-namenode
+    spec:
+      containers:
+        - name: hdfs-namenode
+          image: angelsevillacamins/docker-hadoop-namenode:latest
+          imagePullPolicy: "Always"
+          env:
+            - name: CLUSTER_NAME
+              value: hdfs-k8s
+          ports:
+          - containerPort: 8020
+            name: fs
+          volumeMounts:
+            - name: hdfs-name
+              mountPath: /hadoop/dfs/name
+          resources :
+            requests :
+                cpu : 1
+                memory : "3Gi"
+            limits :
+                cpu : 1
+                memory : "3Gi"
+          command:
+            - "/bin/bash"
+            - "-c"
+            - "--"
+          args :
+            - '. ./entrypoint.sh; . ./run.sh'
+      # Pin the pod to a node. You can label your node like below:
+      #   $ kubectl label nodes YOUR-NODE hdfs-namenode-selector=hdfs-namenode-0
+      nodeSelector:
+        hdfs-namenode-selector: hdfs-namenode-0
+      restartPolicy: Always
+      volumes:
+        - name: hdfs-name
+          hostPath:
+            path: /var/hdfs-name

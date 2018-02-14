@@ -1,0 +1,55 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: hdfs-datanode
+spec:
+  template:
+    metadata:
+      labels:
+        name: hdfs-datanode
+    spec:
+      containers:
+        - name: datanode
+          image: angelsevillacamins/docker-hadoop-datanode:latest
+          imagePullPolicy: "Always"
+          env:
+            # The following env vars are listed according to low-to-high precedence order.
+            # i.e. Whoever comes last will override the earlier value of the same variable.
+            - name: HDFS_CONF_dfs_datanode_address
+              value: 0.0.0.0:1004
+            - name: HDFS_CONF_dfs_datanode_http_address
+              value: 0.0.0.0:1006
+            - name: CORE_CONF_fs_defaultFS
+              value: hdfs://hdfs-namenode-0.hdfs-namenode.default.svc.cluster.local:8020
+            - name: HDFS_CONF_dfs_datanode_data_dir
+              value: /hadoop/dfs/data-0
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: hdfs-data-0
+              mountPath: /hadoop/dfs/data-0
+          resources :
+            requests :
+                cpu : 1
+                memory : "3Gi"
+            limits :
+                cpu : 1
+                memory : "3Gi"
+          command:
+            - "/bin/bash"
+            - "-c"
+            - "--"
+          args :
+            - '. ./entrypoint.sh; . ./run.sh'
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: hdfs-datanode-exclude
+                  operator: DoesNotExist
+      restartPolicy: Always
+      volumes:
+        - name: hdfs-data-0
+          hostPath:
+            path: /var/hdfs-data

@@ -1,0 +1,78 @@
+{
+  "name": "spark",
+  "group": "spark",
+  "properties": {
+    "spark.executor.memory": "${SPARK_EXECUTOR_MEMORY}",
+    "args": "",
+    "zeppelin.spark.printREPLOutput": "true",
+    "spark.cores.max": "${SPARK_CORES_MAX}",
+    "zeppelin.dep.additionalRemoteRepository": "spark-packages,http://dl.bintray.com/spark-packages/maven,false;",
+    "zeppelin.spark.sql.stacktrace": "false",
+    "zeppelin.spark.importImplicit": "true",
+    "zeppelin.spark.concurrentSQL": "false",
+    "zeppelin.spark.useHiveContext": "true",
+    "zeppelin.pyspark.python": "python3.6",
+    "zeppelin.dep.localrepo": "local-repo",
+    "zeppelin.R.knitr": "true",
+    "zeppelin.spark.maxResult": "1000",
+    "master": "spark://spark-master:7077",
+    "spark.app.name": "Zeppelin",
+    "zeppelin.R.image.width": "100%",
+    "zeppelin.R.render.options": "out.format = 'html', comment = NA, echo = FALSE, results = 'asis', message = F, warning = F",
+    "zeppelin.R.cmd": "R"
+  },
+  "status": "READY",
+  "interpreterGroup": [
+    {
+      "name": "spark",
+      "class": "org.apache.zeppelin.spark.SparkInterpreter",
+      "defaultInterpreter": true,
+      "editor": {
+        "language": "scala"
+      }
+    },
+    {
+      "name": "sql",
+      "class": "org.apache.zeppelin.spark.SparkSqlInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "sql"
+      }
+    },
+    {
+      "name": "dep",
+      "class": "org.apache.zeppelin.spark.DepInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "scala"
+      }
+    },
+    {
+      "name": "pyspark",
+      "class": "org.apache.zeppelin.spark.PySparkInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "python"
+      }
+    },
+    {
+      "name": "r",
+      "class": "org.apache.zeppelin.spark.SparkRInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "r"
+      }
+    }
+  ],
+  "dependencies": [],
+  "option": {
+    "remote": true,
+    "port": -1,
+    "perNote": "shared",
+    "perUser": "shared",
+    "isExistingProcess": false,
+    "setPermission": false,
+    "users": [],
+    "isUserImpersonate": false
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "file",
+  "group": "file",
+  "properties": {
+    "hdfs.maxlength": "1000",
+    "hdfs.user": "hdfs",
+    "hdfs.url": "http://hdfs-namenode-0.hdfs-namenode.default.svc.cluster.local:50070/webhdfs/v1/"
+  },
+  "status": "READY",
+  "interpreterGroup": [
+    {
+      "name": "hdfs",
+      "class": "org.apache.zeppelin.file.HDFSFileInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "editOnDblClick": false
+      }
+    }
+  ],
+  "dependencies": [],
+  "option": {
+    "remote": true,
+    "port": -1,
+    "perNote": "shared",
+    "perUser": "shared",
+    "isExistingProcess": false,
+    "setPermission": false,
+    "users": [],
+    "isUserImpersonate": false
+  }
+}

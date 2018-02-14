@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spark-ui-proxy-controller
+spec:
+  serviceName: spark-ui-proxy
+  replicas: 1
+  selector:
+    matchLabels:
+      component: spark-ui-proxy
+  template:
+    metadata:
+      labels:
+        component: spark-ui-proxy
+    spec:
+      containers:
+        - name: spark-ui-proxy
+          image: angelsevillacamins/docker-spark-ui:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 100m
+          args:
+            - spark-master:8081
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: spark-ui-proxy
+spec:
+  ports:
+    - port: 8080
+      targetPort: 80
+  selector:
+    component: spark-ui-proxy
+  externalIPs:
+  - <IP-nuc01>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-master
+  labels:
+    name: spark-master
+spec:
+  ports:
+  - name: zeppelin
+    port: 8181
+    targetPort: 8181
+  - name: webui
+    port: 8081
+    targetPort: 8080
+  - name: spark
+    port: 7077
+    targetPort: 7077
+  - name: rstudio
+    port: 8787
+    targetPort: 8787
+  selector:
+    name: spark-master
+  externalIPs:
+  - <IP-nuc01>
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spark-master
+spec:
+  serviceName: spark-master
+  replicas: 1
+  selector:
+    matchLabels:
+       name: spark-master
+  template:
+    metadata:
+      labels:
+        name: spark-master
+    spec:
+      containers:
+      - name : spark-master
+        image: angelsevillacamins/kubernetes-spark-libraries-rstudio:latest
+        imagePullPolicy: "Always"
+        name: spark-master
+        env:
+        - name: RSTUDIOUSER
+          valueFrom:
+            secretKeyRef:
+                name: rstudio-user
+                key: user
+        - name: RSTUDIOPASSWORD
+          valueFrom:
+            secretKeyRef:
+                name: rstudio-password
+                key: password
+        - name: ZEPPELINUSER
+          valueFrom:
+            secretKeyRef:
+                name: zeppelin-user
+                key: user
+        - name: ZEPPELINPASSWORD
+          valueFrom:
+            secretKeyRef:
+                name: zeppelin-password
+                key: password
+        - name: SPARK_CORES_MAX 
+          value: "${SPARK_CORES_MAX}"
+        - name: SPARK_EXECUTOR_CORES 
+          value: "${SPARK_EXECUTOR_CORES}"
+        - name: SPARK_EXECUTOR_MEMORY
+          value: "${SPARK_EXECUTOR_MEMORY}"
+        - name: SPARK_DRIVER_CORES
+          value: "${SPARK_DRIVER_CORES}"
+        - name: SPARK_DRIVER_MEMORY
+          value: "${SPARK_DRIVER_MEMORY}"
+        - name: SPARK_DRIVER_MAXRESULTSIZE
+          value: "${SPARK_DRIVER_MAXRESULTSIZE}"
+        volumeMounts:
+        - name: persist
+          mountPath: /persist
+        ports:
+        - containerPort: 8181
+          protocol: TCP
+        - containerPort: 7077
+          protocol: TCP
+        - containerPort: 8787
+          protocol: TCP
+        resources :
+          requests :
+            cpu : ${SPARK_MASTER_REQUESTS_CPU}
+            memory : "${SPARK_MASTER_REQUESTS_MEMORY}"
+          limits :
+            cpu : ${SPARK_MASTER_LIMITS_CPU}
+            memory : "${SPARK_MASTER_LIMITS_MEMORY}"
+      volumes:
+        - name: persist
+          persistentVolumeClaim:
+            claimName: persist-pvc
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spark-worker
+spec:
+  serviceName: spark-worker
+  replicas: 1
+  selector:
+    matchLabels:
+       name: spark-worker
+  template:
+    metadata:
+      labels:
+        name: spark-worker
+    spec:
+      containers:
+      - image: angelsevillacamins/kubernetes-spark-libraries:latest
+        imagePullPolicy: "Always"
+        name: spark-worker
+        env:
+        - name: SPARK_WORKER_REQUESTS_CPU
+          value: "${SPARK_WORKER_REQUESTS_CPU}"
+        - name: SPARK_WORKER_REQUESTS_MEMORY
+          value: "${SPARK_WORKER_REQUESTS_MEMORY}"
+        volumeMounts:
+        - name: persist
+          mountPath: /persist
+        ports:
+        - containerPort: 7078
+          protocol: TCP
+        resources :
+          requests :
+            cpu : ${SPARK_WORKER_REQUESTS_CPU}
+            memory : "${SPARK_WORKER_REQUESTS_MEMORY}"
+          limits :
+             cpu : ${SPARK_WORKER_LIMITS_CPU}
+             memory : "${SPARK_WORKER_LIMITS_MEMORY}"
+        command:
+         - "/bin/bash"
+         - "-c"
+         - "--"
+        args :
+         - '. ./start-worker.sh; sleep infinity'
+      volumes:
+        - name: persist
+          persistentVolumeClaim:
+            claimName: persist-pvc

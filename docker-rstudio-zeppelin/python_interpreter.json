@@ -1,0 +1,58 @@
+{
+  "name": "python",
+  "group": "python",
+  "properties": {
+    "zeppelin.python": "python3.6",
+    "zeppelin.python.maxResult": "1000"
+  },
+  "status": "READY",
+  "interpreterGroup": [
+    {
+      "name": "python",
+      "class": "org.apache.zeppelin.python.PythonInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "python",
+        "editOnDblClick": false
+      }
+    },
+    {
+      "name": "sql",
+      "class": "org.apache.zeppelin.python.PythonInterpreterPandasSql",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "sql",
+        "editOnDblClick": false
+      }
+    },
+    {
+      "name": "conda",
+      "class": "org.apache.zeppelin.python.PythonCondaInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "sh",
+        "editOnDblClick": false
+      }
+    },
+    {
+      "name": "docker",
+      "class": "org.apache.zeppelin.python.PythonDockerInterpreter",
+      "defaultInterpreter": false,
+      "editor": {
+        "language": "sh",
+        "editOnDblClick": false
+      }
+    }
+  ],
+  "dependencies": [],
+  "option": {
+    "remote": true,
+    "port": -1,
+    "perNote": "shared",
+    "perUser": "shared",
+    "isExistingProcess": false,
+    "setPermission": false,
+    "users": [],
+    "isUserImpersonate": false
+  }
+}
